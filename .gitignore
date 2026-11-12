@@ -1,0 +1,27 @@
+# Gradle
+.gradle/
+build/
+
+# Локальная конфигурация
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+/captures/
+.navigation/
+
+# Kotlin
+.kotlin/
+
+# Native
+.externalNativeBuild/
+.cxx/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Логи
+*.log
+*.hprof

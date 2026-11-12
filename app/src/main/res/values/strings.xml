@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">StepTrail</string>
+    <string name="btn_start">Старт</string>
+    <string name="btn_stop">Стоп</string>
+    <string name="speed_current">Скорость</string>
+    <string name="speed_avg">Средняя скорость</string>
+    <string name="distance">Дистанция</string>
+    <string name="duration">Длительность</string>
+    <string name="gps_no_permission">Нет разрешения на геолокацию</string>
+    <string name="gps_searching">Поиск сигнала GPS…</string>
+    <string name="gps_active">GPS активен</string>
+    <string name="notification_title">StepTrail записывает прогулку</string>
+    <string name="notification_text">Отслеживание в реальном времени</string>
+    <string name="journal_empty">Пока нет прогулок.\nНажмите Старт на главном экране</string>
+    <string name="journal_date">Дата</string>
+    <string name="journal_duration">Длительность</string>
+    <string name="journal_distance">Дистанция</string>
+    <string name="journal_avg_speed">Средняя скорость</string>
+    <string name="journal_max_speed">Макс. скорость</string>
+    <string name="detail_title">Детали прогулки</string>
+    <string name="km">км</string>
+    <string name="kmh">км/ч</string>
+    <string name="permission_rationale">Для отслеживания прогулок приложению требуется доступ к геолокации</string>
+    <string name="stat_meters">м</string>
+    <string name="stat_seconds">с</string>
+</resources>
