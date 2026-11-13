@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Looper
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -30,14 +31,14 @@ class LocationTracker(
     private val fusedClient = LocationServices.getFusedLocationProviderClient(context)
 
     private val _locationFlow = MutableSharedFlow<Location>(
-        replay = 0,
+        replay = 1,
         extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     val locationFlow: Flow<Location> = _locationFlow.asSharedFlow()
 
     private val _trackPointFlow = MutableSharedFlow<TrackPoint>(
-        replay = 0,
+        replay = 1,
         extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
@@ -48,37 +49,63 @@ class LocationTracker(
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
+            // Логируем КАЖДЫЙ вызов, даже если точек нет
+            Log.d(TAG, "onLocationResult: ${result.locations.size} locations")
             for (location in result.locations.reversed()) {
                 processLocation(location)
             }
         }
     }
 
+    private companion object {
+        const val TAG = "StepTrailGPS"
+        // Порог фильтрации accuracy (в метрах)
+        const val ACCURACY_THRESHOLD_M = 100f
+        // Минимальное расстояние для эмита точки (в метрах)
+        const val MIN_DISTANCE_M = 0.3
+    }
+
     /**
      * Запрашивает обновления геолокации.
      */
     fun requestLocationUpdates() {
-        if (!hasLocationPermission()) return
+        val hasPerm = hasLocationPermission()
+        Log.d(TAG, "requestLocationUpdates called, hasPermission=$hasPerm")
+        if (!hasPerm) {
+            Log.w(TAG, "Location permission not granted, aborting")
+            return
+        }
 
+        // Ослаблены фильтры: интервал 5 сек, без фильтра по расстоянию,
+        // без ожидания идеальной точности. Это убирает "blocked - too close"
+        // и "blocked - too fast" в FusedLocation, из-за которых callback
+        // не срабатывал, когда пользователь стоял на месте.
         val request = LocationRequest.Builder(
             Priority.PRIORITY_HIGH_ACCURACY,
-            2000L // интервал 2 секунды
+            5000L // интервал 5 секунд
         ).apply {
-            setMinUpdateIntervalMillis(1000L)
-            setMinUpdateDistanceMeters(1f)
+            setMinUpdateIntervalMillis(3000L)  // минимум 3 секунды
+            setMinUpdateDistanceMeters(0f)     // не фильтровать по расстоянию
+            setWaitForAccurateLocation(false)  // не ждать идеальной точности
         }.build()
 
-        fusedClient.requestLocationUpdates(
-            request,
-            locationCallback,
-            Looper.getMainLooper()
-        )
+        try {
+            fusedClient.requestLocationUpdates(
+                request,
+                locationCallback,
+                Looper.getMainLooper()
+            )
+            Log.d(TAG, "FusedLocation updates requested successfully")
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException in requestLocationUpdates", e)
+        }
     }
 
     /**
      * Останавливает получение геолокации.
      */
     fun removeLocationUpdates() {
+        Log.d(TAG, "removeLocationUpdates called")
         fusedClient.removeLocationUpdates(locationCallback)
         lastLocation = null
         lastTrackPoint = null
@@ -103,17 +130,25 @@ class LocationTracker(
 
     /**
      * Обрабатывает полученную точку геолокации.
-     * Фильтрует по точности и скорости движения.
+     * Фильтрует по точности и минимальному расстоянию.
      */
     private fun processLocation(location: Location) {
-        // Фильтр по точности: отбрасываем точки с accuracy > 30 м
-        if (location.accuracy > 30f) return
+        Log.d(
+            TAG,
+            "onLocation: lat=${location.latitude}, lon=${location.longitude}, " +
+                    "speed=${location.speed}, acc=${location.accuracy}"
+        )
+
+        // Фильтр по точности: отбрасываем точки с accuracy > 100 м
+        if (location.accuracy > ACCURACY_THRESHOLD_M) {
+            Log.d(TAG, "Skipping: accuracy=${location.accuracy} > $ACCURACY_THRESHOLD_M")
+            return
+        }
+
+        // ⬇️ ДОБАВИТЬ ЭТУ СТРОКУ
+        _locationFlow.tryEmit(location)
 
         lastLocation = location
-
-        // Фильтр неподвижного пользователя: скорость < 0.3 м/с
-        val speedMs = location.speed
-        if (speedMs < 0.3f) return
 
         // Вычисляем расстояние от последней точки
         val distanceMeters = lastTrackPoint?.let { tp ->
@@ -123,9 +158,7 @@ class LocationTracker(
             )
         } ?: 0.0
 
-        // Точки, где пользователь не двигался (расстояние ~0), не увеличивают дистанцию
-        if (distanceMeters < 0.5) return
-
+        // Создаём точку трека
         val trackPoint = TrackPoint(
             walkId = 0L, // будет установлено сервисом
             latitude = location.latitude,
@@ -134,7 +167,17 @@ class LocationTracker(
             timestamp = Date(),
             speed = location.speed
         )
+
+        // lastTrackPoint обновляем ВСЕГДА после прохождения фильтра accuracy,
+        // чтобы трек не "залипал" при медленной ходьбе
         lastTrackPoint = trackPoint
-        _trackPointFlow.tryEmit(trackPoint)
+
+        // Эмитим точку если distanceMeters >= 0.3 м
+        if (distanceMeters >= MIN_DISTANCE_M) {
+            Log.d(TAG, "Emitting trackPoint: distance=$distanceMeters")
+            _trackPointFlow.tryEmit(trackPoint)
+        } else {
+            Log.d(TAG, "Skipping: distance=$distanceMeters < $MIN_DISTANCE_M")
+        }
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pandakind.steptrail.R
 import com.pandakind.steptrail.ui.main.formatDuration
 import java.text.SimpleDateFormat
 import java.util.Locale

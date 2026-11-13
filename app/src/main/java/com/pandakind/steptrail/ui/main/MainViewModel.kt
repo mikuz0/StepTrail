@@ -2,26 +2,28 @@ package com.pandakind.steptrail.ui.main
 
 import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pandakind.steptrail.data.location.LocationTracker
-import com.pandakind.steptrail.data.repository.WalkRepositoryImpl
-import com.pandakind.steptrail.data.local.AppDatabase
-import com.pandakind.steptrail.domain.usecase.GetWalksUseCase
-import com.pandakind.steptrail.domain.usecase.ObserveCurrentWalkUseCase
+import com.pandakind.steptrail.domain.model.TrackPoint
+import com.pandakind.steptrail.domain.repository.WalkRepository
 import com.pandakind.steptrail.domain.usecase.StartWalkUseCase
-import com.pandakind.steptrail.domain.usecase.StopWalkUseCase
 import com.pandakind.steptrail.service.WalkTrackingService
 import com.pandakind.steptrail.util.haversineDistance
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.Date
 import javax.inject.Inject
+import kotlinx.coroutines.flow.update
 
 /**
  * ViewModel главного экрана.
@@ -31,68 +33,23 @@ import javax.inject.Inject
 class MainViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val startWalkUseCase: StartWalkUseCase,
-    private val stopWalkUseCase: StopWalkUseCase,
-    private val observeCurrentWalkUseCase: ObserveCurrentWalkUseCase,
-    private val getWalksUseCase: GetWalksUseCase,
-    private val database: AppDatabase
+    private val repository: WalkRepository,
+    private val locationTracker: LocationTracker
 ) : ViewModel() {
-
-    private val repository = WalkRepositoryImpl(database.walkDao())
-    private val locationTracker = LocationTracker(context)
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     private var currentWalkId: Long = 0L
-    private var lastLocationPoint: com.pandakind.steptrail.domain.model.TrackPoint? = null
+    private var lastLocationPoint: TrackPoint? = null
     private var totalDistanceMeters: Double = 0.0
     private var startTimeMillis: Long = 0L
 
-    private var serviceBound = false
-    private var serviceConnection: ServiceConnection? = null
+    private var locationJob: Job? = null
+    private var timerJob: Job? = null
 
-    // Счётчик для таймера длительности
-    private val _timerTick = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-
-    init {
-        observeCurrentWalk()
-        startTimerTick()
-    }
-
-    /**
-     * Наблюдает за текущей активной прогулкой.
-     */
-    private fun observeCurrentWalk() {
-        viewModelScope.launch {
-            observeCurrentWalkUseCase.execute()
-                .collect { walk ->
-                    if (walk != null) {
-                        currentWalkId = walk.id
-                        _uiState.update { state ->
-                            state.copy(
-                                isTracking = true,
-                                walkId = walk.id,
-                                distanceKm = walk.distanceMeters / 1000.0,
-                                avgSpeedKmh = walk.avgSpeedMps * 3.6,
-                                durationSeconds = walk.durationSeconds
-                            )
-                        }
-                        totalDistanceMeters = walk.distanceMeters
-                    }
-                }
-        }
-    }
-
-    /**
-     * Запускает поток тиков таймера (каждую секунду).
-     */
-    private fun startTimerTick() {
-        viewModelScope.launch {
-            while (true) {
-                _timerTick.emit(Unit)
-                kotlinx.coroutines.delay(1000)
-            }
-        }
+    private companion object {
+        const val TAG = "StepTrailVM"
     }
 
     /**
@@ -111,15 +68,14 @@ class MainViewModel @Inject constructor(
      */
     private fun startTracking() {
         viewModelScope.launch(Dispatchers.IO) {
+            Log.d(TAG, "startTracking() called")
             currentWalkId = startWalkUseCase.execute()
             startTimeMillis = System.currentTimeMillis()
             totalDistanceMeters = 0.0
             lastLocationPoint = null
 
-            // Запускаем foreground service
             startTrackingService()
-
-            // Подписываемся на обновления геолокации
+            startTimer()
             subscribeToLocationUpdates()
 
             _uiState.update { state ->
@@ -133,6 +89,22 @@ class MainViewModel @Inject constructor(
                     gpsStatus = GpsStatus.SEARCHING
                 )
             }
+            Log.d(TAG, "startTracking() finished, walkId=$currentWalkId")
+        }
+    }
+
+    /**
+     * Запускает таймер обновления durationSeconds.
+     */
+    private fun startTimer() {
+        timerJob?.cancel()
+        timerJob = viewModelScope.launch {
+            while (true) {
+                if (!_uiState.value.isTracking) break
+                val elapsed = (System.currentTimeMillis() - startTimeMillis) / 1000
+                _uiState.update { it.copy(durationSeconds = elapsed) }
+                delay(1000)
+            }
         }
     }
 
@@ -141,35 +113,31 @@ class MainViewModel @Inject constructor(
      */
     private fun stopTracking() {
         viewModelScope.launch(Dispatchers.IO) {
-            // Останавливаем сервис
+            Log.d(TAG, "stopTracking() called, totalDistance=$totalDistanceMeters")
+            timerJob?.cancel()
+            timerJob = null
+            locationJob?.cancel()
+            locationJob = null
             stopTrackingService()
-
-            // Останавливаем подписку на геолокацию
             locationTracker.removeLocationUpdates()
 
-            // Сохраняем итоговые данные
-            val duration = System.currentTimeMillis() - startTimeMillis
-            val durationSeconds = duration / 1000
-            val avgSpeed = if (durationSeconds > 0) totalDistanceMeters / durationSeconds else 0.0
+            val durationSeconds = (System.currentTimeMillis() - startTimeMillis) / 1000
+            val avgSpeedMps = if (durationSeconds > 0) totalDistanceMeters / durationSeconds else 0.0
 
-            val walk = com.pandakind.steptrail.data.local.entity.WalkEntity(
-                id = currentWalkId,
-                startDate = Date(),
+            repository.finishWalk(
+                walkId = currentWalkId,
                 durationSeconds = durationSeconds,
                 distanceMeters = totalDistanceMeters,
-                avgSpeedMps = avgSpeed,
-                maxSpeedMps = 0.0,
-                isCompleted = 1
+                avgSpeedMps = avgSpeedMps
             )
-            database.walkDao().updateWalk(walk)
-            repository.stopWalk(currentWalkId)
 
             _uiState.update { state ->
                 state.copy(
                     isTracking = false,
                     currentSpeedKmh = 0.0,
                     avgSpeedKmh = 0.0,
-                    durationSeconds = 0
+                    distanceKm = totalDistanceMeters / 1000.0,
+                    durationSeconds = durationSeconds
                 )
             }
         }
@@ -200,20 +168,21 @@ class MainViewModel @Inject constructor(
      * Подписывается на обновления геолокации и обновляет UI.
      */
     private fun subscribeToLocationUpdates() {
-        viewModelScope.launch {
+        locationJob?.cancel()
+        locationJob = viewModelScope.launch {
+            Log.d(TAG, "Subscribed to locationFlow")
             locationTracker.locationFlow.collect { location ->
-                _uiState.update { state ->
-                    state.copy(gpsStatus = GpsStatus.ACTIVE)
-                }
+                Log.d(TAG, "VM got location: lat=${location.latitude}, speed=${location.speed}")
 
-                // Текущая скорость из GPS
+                // Обновляем статус GPS сразу
+                _uiState.update { it.copy(gpsStatus = GpsStatus.ACTIVE) }
+
+                // Обновляем текущую скорость
                 val currentSpeedKmh = location.speed * 3.6
-                _uiState.update { state ->
-                    state.copy(currentSpeedKmh = currentSpeedKmh)
-                }
+                _uiState.update { it.copy(currentSpeedKmh = currentSpeedKmh) }
 
-                // Вычисляем расстояние
-                val currentPoint = com.pandakind.steptrail.domain.model.TrackPoint(
+                // Создаём точку
+                val currentPoint = TrackPoint(
                     walkId = currentWalkId,
                     latitude = location.latitude,
                     longitude = location.longitude,
@@ -222,6 +191,7 @@ class MainViewModel @Inject constructor(
                     speed = location.speed
                 )
 
+                // Считаем расстояние от ПРЕДЫДУЩЕЙ точки
                 val distance = lastLocationPoint?.let { last ->
                     haversineDistance(
                         last.latitude, last.longitude,
@@ -229,20 +199,16 @@ class MainViewModel @Inject constructor(
                     )
                 } ?: 0.0
 
-                if (distance >= 0.5) {
-                    totalDistanceMeters += distance
-                    lastLocationPoint = currentPoint
+                // ВСЕГДА обновляем lastLocationPoint (даже если distance < 0.3)
+                lastLocationPoint = currentPoint
 
-                    // Сохраняем точку через сервис
-                    val trackPoint = com.pandakind.steptrail.domain.model.TrackPoint(
-                        walkId = currentWalkId,
-                        latitude = location.latitude,
-                        longitude = location.longitude,
-                        accuracy = location.accuracy,
-                        timestamp = Date(),
-                        speed = location.speed
-                    )
-                    repository.saveTrackPoint(trackPoint)
+                // Накапливаем дистанцию только если прошли >= 0.3 м
+                if (distance >= 0.3) {
+                    totalDistanceMeters += distance
+                    Log.d(TAG, "Added distance: $distance, total=$totalDistanceMeters")
+
+                    // Сохраняем точку в БД
+                    repository.saveTrackPoint(currentPoint)
 
                     // Обновляем UI
                     val elapsed = (System.currentTimeMillis() - startTimeMillis) / 1000
@@ -252,9 +218,11 @@ class MainViewModel @Inject constructor(
                         state.copy(
                             distanceKm = totalDistanceMeters / 1000.0,
                             avgSpeedKmh = avgSpeed * 3.6,
-                            durationSeconds = elapsed.toLong()
+                            durationSeconds = elapsed
                         )
                     }
+                } else {
+                    Log.d(TAG, "Skipping: distance=$distance < 0.3")
                 }
             }
         }

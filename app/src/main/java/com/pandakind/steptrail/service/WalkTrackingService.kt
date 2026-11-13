@@ -12,8 +12,8 @@ import androidx.core.app.NotificationCompat
 import com.pandakind.steptrail.R
 import com.pandakind.steptrail.MainActivity
 import com.pandakind.steptrail.data.location.LocationTracker
-import com.pandakind.steptrail.data.repository.WalkRepositoryImpl
-import com.pandakind.steptrail.data.local.AppDatabase
+import com.pandakind.steptrail.domain.repository.WalkRepository
+import com.pandakind.steptrail.domain.model.TrackPoint
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import javax.inject.Inject
@@ -26,14 +26,19 @@ import javax.inject.Inject
 class WalkTrackingService : Service() {
 
     private val binder = WalkTrackingBinder()
-    private var locationTracker: LocationTracker? = null
     private var trackingJob: Job? = null
     private var currentWalkId: Long = 0L
+    private var maxSpeedMps: Double = 0.0
 
-    private var repository: WalkRepositoryImpl? = null
+    // Зависимости через Hilt — один синглтон для всего приложения
+    @Inject
+    lateinit var repository: WalkRepository
 
     @Inject
-    lateinit var database: AppDatabase
+    lateinit var locationTracker: LocationTracker
+
+    // CoroutineScope для сервиса, отменяемый в onDestroy
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val LOCATION_CHANNEL_ID = "steptrail_location_channel"
     private val NOTIFICATION_ID = 1
@@ -47,9 +52,7 @@ class WalkTrackingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        // Инициализируем repository вручную, т.к. Hilt может не внедрить в сервис
-        repository = WalkRepositoryImpl(database.walkDao())
-        locationTracker = LocationTracker(this)
+        // Hilt уже внедрил зависимости через @Inject
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -57,6 +60,7 @@ class WalkTrackingService : Service() {
             ACTION_START -> {
                 val walkId = intent.getLongExtra(EXTRA_WALK_ID, 0L)
                 currentWalkId = walkId
+                maxSpeedMps = 0.0
                 startTracking()
             }
             ACTION_STOP -> {
@@ -69,6 +73,11 @@ class WalkTrackingService : Service() {
 
     override fun onBind(intent: Intent?): IBinder = binder
 
+    override fun onDestroy() {
+        serviceScope.cancel()
+        super.onDestroy()
+    }
+
     /**
      * Запускает трекинг: foreground notification + GPS updates.
      */
@@ -77,14 +86,18 @@ class WalkTrackingService : Service() {
         val notification = buildNotification()
         startForeground(NOTIFICATION_ID, notification)
 
-        locationTracker?.requestLocationUpdates()
+        locationTracker.requestLocationUpdates()
 
-        trackingJob = CoroutineScope(Dispatchers.IO).launch {
-            locationTracker?.trackPointFlow?.let { flow ->
-                flow.collect { trackPoint ->
-                    val tp = trackPoint.copy(walkId = currentWalkId)
-                    repository?.saveTrackPoint(tp)
+        trackingJob = serviceScope.launch {
+            locationTracker.trackPointFlow.collect { trackPoint ->
+                // Обновляем максимальную скорость
+                val speedMs = trackPoint.speed.toDouble()
+                if (speedMs > maxSpeedMps) {
+                    maxSpeedMps = speedMs
                 }
+
+                val tp = trackPoint.copy(walkId = currentWalkId)
+                repository.saveTrackPoint(tp)
             }
         }
     }
@@ -94,9 +107,10 @@ class WalkTrackingService : Service() {
      */
     private fun stopTracking() {
         trackingJob?.cancel()
-        locationTracker?.removeLocationUpdates()
-        CoroutineScope(Dispatchers.IO).launch {
-            repository?.stopWalk(currentWalkId)
+        locationTracker.removeLocationUpdates()
+        serviceScope.launch {
+            repository.updateMaxSpeed(currentWalkId, maxSpeedMps)
+            repository.stopWalk(currentWalkId)
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()

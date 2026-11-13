@@ -3,7 +3,7 @@ package com.pandakind.steptrail.ui.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pandakind.steptrail.domain.model.Walk
-import com.pandakind.steptrail.domain.usecase.ObserveCurrentWalkUseCase
+import com.pandakind.steptrail.domain.usecase.GetWalkByIdUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +16,7 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class WalkDetailViewModel @Inject constructor(
-    private val observeCurrentWalkUseCase: ObserveCurrentWalkUseCase
+    private val getWalkByIdUseCase: GetWalkByIdUseCase
 ) : ViewModel() {
 
     private val _walk = MutableStateFlow<Walk?>(null)
@@ -24,19 +24,13 @@ class WalkDetailViewModel @Inject constructor(
 
     /**
      * Загружает прогулку по ID.
-     * TODO: добавить отдельный use case GetWalkByIdUseCase для полной загрузки.
-     * Сейчас используется observeCurrentWalk для демонстрации.
      */
     fun loadWalk(walkId: Long) {
         viewModelScope.launch {
-            // TODO: Реализовать GetWalkByIdUseCase
-            // Пока просто обновляем текущую прогулку
-            observeCurrentWalkUseCase.execute()
+            getWalkByIdUseCase.execute(walkId)
                 .catch { emit(null) }
                 .collect { w ->
-                    if (w?.id == walkId) {
-                        _walk.value = w
-                    }
+                    _walk.value = w
                 }
         }
     }

@@ -23,6 +23,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -30,6 +31,7 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
     compileOptions {
@@ -70,6 +72,10 @@ dependencies {
 
     // Location
     implementation(libs.play.services.location)
+
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
 
     // Testing
     testImplementation(libs.junit)

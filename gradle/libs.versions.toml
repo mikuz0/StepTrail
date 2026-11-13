@@ -14,7 +14,7 @@ room = "2.6.1"
 navigationCompose = "2.8.4"
 playServicesLocation = "21.1.0"
 coroutines = "1.8.1"
-kspVersion = "2.0.21-1.0.28"
+kspVersion = "2.0.21-1.0.27"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

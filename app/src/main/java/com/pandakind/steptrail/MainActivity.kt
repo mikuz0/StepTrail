@@ -1,7 +1,5 @@
 package com.pandakind.steptrail
 
-import android.Manifest
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -25,7 +22,7 @@ import dagger.hilt.android.AndroidEntryPoint
 
 /**
  * Главная активность приложения.
- * Настраивает навигацию и запрос разрешений.
+ * Настраивает навигацию. Запрос разрешений — в MainScreen.
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -33,9 +30,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        // Запрашиваем разрешения при запуске
-        requestPermissionsIfNeeded()
 
         setContent {
             StepTrailTheme {
@@ -45,32 +39,6 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
-        }
-    }
-
-    /**
-     * Запрашивает разрешения на геолокацию при первом запуске.
-     */
-    private fun requestPermissionsIfNeeded() {
-        val permissions = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
-            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-        if (permissions.isNotEmpty()) {
-            registerForActivityResult(
-                androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
-            ) { }.launch(permissions.toTypedArray())
         }
     }
 }

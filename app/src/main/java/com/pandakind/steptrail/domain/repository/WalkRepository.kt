@@ -20,6 +20,21 @@ interface WalkRepository {
     suspend fun stopWalk(walkId: Long)
 
     /**
+     * Завершает прогулку с расчётом длительности и средней скорости.
+     */
+    suspend fun finishWalk(
+        walkId: Long,
+        durationSeconds: Long,
+        distanceMeters: Double,
+        avgSpeedMps: Double
+    )
+
+    /**
+     * Обновляет максимальную скорость прогулки.
+     */
+    suspend fun updateMaxSpeed(walkId: Long, maxSpeedMps: Double)
+
+    /**
      * Сохраняет точку трека.
      */
     suspend fun saveTrackPoint(trackPoint: TrackPoint)

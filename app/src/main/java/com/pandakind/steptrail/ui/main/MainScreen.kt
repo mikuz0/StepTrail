@@ -2,6 +2,8 @@ package com.pandakind.steptrail.ui.main
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Build.VERSION
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -21,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pandakind.steptrail.R
 import com.pandakind.steptrail.ui.theme.*
 
 /**
@@ -37,32 +40,53 @@ fun MainScreen(
     val context = LocalContext.current
 
     // Launcher для запроса разрешений
+    var permissionRequested by remember { mutableStateOf(false) }
+    
     val permissionsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val fineLocationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        val coarseLocationGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (fineLocationGranted && coarseLocationGranted) {
-            // Разрешения получены
-        }
+        permissionRequested = true
+        // Разрешения получены (фоновое опционально)
     }
 
-    // Проверяем, есть ли разрешения
-    val hasPermission = remember {
+    // Динамически проверяем разрешения при каждом перерисовке
+    var hasPermission by remember { mutableStateOf(
         ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+    ) }
+
+    // Обновляем hasPermission при каждом перерисовке
+    LaunchedEffect(context) {
+        hasPermission = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    LaunchedEffect(hasPermission) {
-        if (!hasPermission) {
+    LaunchedEffect(hasPermission, permissionRequested) {
+        if (!hasPermission && !permissionRequested) {
+            permissionRequested = true
             permissionsLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 )
             )
+        } else if (hasPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !permissionRequested) {
+            // Запрашиваем фоновое разрешение если ещё не запрошено
+            permissionRequested = true
+            val backgroundStatus = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            )
+            if (backgroundStatus != PackageManager.PERMISSION_GRANTED &&
+                backgroundStatus != PackageManager.PERMISSION_DENIED) {
+                permissionsLauncher.launch(
+                    arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                )
+            }
         }
     }
 

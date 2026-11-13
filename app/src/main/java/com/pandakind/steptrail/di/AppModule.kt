@@ -6,6 +6,7 @@ import com.pandakind.steptrail.data.local.WalkDao
 import com.pandakind.steptrail.data.location.LocationTracker
 import com.pandakind.steptrail.data.repository.WalkRepositoryImpl
 import com.pandakind.steptrail.domain.repository.WalkRepository
+import com.pandakind.steptrail.domain.usecase.GetWalkByIdUseCase
 import com.pandakind.steptrail.domain.usecase.GetWalksUseCase
 import com.pandakind.steptrail.domain.usecase.ObserveCurrentWalkUseCase
 import com.pandakind.steptrail.domain.usecase.StartWalkUseCase
@@ -85,6 +86,15 @@ object AppModule {
     @Singleton
     fun provideGetWalksUseCase(repository: WalkRepository): GetWalksUseCase {
         return GetWalksUseCase(repository)
+    }
+
+    /**
+     * Предоставляет use case для получения прогулки по ID.
+     */
+    @Provides
+    @Singleton
+    fun provideGetWalkByIdUseCase(repository: WalkRepository): GetWalkByIdUseCase {
+        return GetWalkByIdUseCase(repository)
     }
 
     /**

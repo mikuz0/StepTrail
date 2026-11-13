@@ -2,6 +2,7 @@ package com.pandakind.steptrail.ui.journal
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -14,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pandakind.steptrail.R
 import com.pandakind.steptrail.domain.model.Walk
 import com.pandakind.steptrail.ui.main.formatDuration
 import java.text.SimpleDateFormat

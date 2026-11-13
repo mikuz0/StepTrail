@@ -36,7 +36,7 @@ Android-приложение для отслеживания прогулок с
 Проект построен по принципам **Clean Architecture** + **MVVM**:
 
 ```
-com.mikuz.steptrail
+com.pandakind.steptrail
 ├── ui/                    # Jetpack Compose экраны
 │   ├── main/              # Главный экран (трекинг)
 │   ├── journal/           # Журнал прогулок

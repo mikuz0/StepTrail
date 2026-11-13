@@ -50,9 +50,8 @@ interface WalkDao {
     /**
      * Удаляет самые старые прогулки, оставляя не более maxWalks.
      */
-    @Query("DELETE FROM walks WHERE id IN (" +
-            "SELECT id FROM walks ORDER BY startDate ASC LIMIT (" +
-            "SELECT COUNT(*) - :maxWalks FROM walks))")
+    @Query("DELETE FROM walks WHERE id NOT IN " +
+            "(SELECT id FROM walks ORDER BY startDate DESC LIMIT :maxWalks)")
     suspend fun deleteOldestWalks(maxWalks: Int)
 
     /**
@@ -74,4 +73,10 @@ interface WalkDao {
      */
     @Query("DELETE FROM track_points WHERE walkId = :walkId")
     suspend fun deleteTrackPointsForWalk(walkId: Long)
+
+    /**
+     * Обновляет максимальную скорость для прогулки.
+     */
+    @Query("UPDATE walks SET maxSpeedMps = :maxSpeed WHERE id = :walkId")
+    suspend fun setMaxSpeed(walkId: Long, maxSpeed: Double)
 }
